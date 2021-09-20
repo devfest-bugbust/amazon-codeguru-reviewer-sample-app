@@ -15,10 +15,8 @@ import com.amazonaws.services.lambda.runtime.LambdaLogger;
 import com.amazonaws.services.lambda.runtime.events.ScheduledEvent;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3ClientBuilder;
-import com.amazonaws.services.s3.model.DeleteObjectsRequest;
+import com.amazonaws.services.s3.model.*;
 import com.amazonaws.services.s3.model.DeleteObjectsRequest.KeyVersion;
-import com.amazonaws.services.s3.model.ObjectListing;
-import com.amazonaws.services.s3.model.S3ObjectSummary;
 import com.shipmentEvents.util.Constants;
 
 import org.apache.commons.lang3.tuple.MutablePair;
@@ -97,51 +95,70 @@ public class EventHandler implements RequestHandler<ScheduledEvent, String> {
         final AmazonS3 s3Client = EventHandler.getS3Client();
         logger.log("Processing Bucket: " + bucketName);
 
-        ObjectListing files = s3Client.listObjects(bucketName);
+        String continuationToken = null;
+        boolean keepReading = true;
+
         List<KeyVersion> filesProcessed = new ArrayList<DeleteObjectsRequest.KeyVersion>();
 
-        for (Iterator<?> iterator = files.getObjectSummaries().iterator(); iterator.hasNext(); ) {
-            S3ObjectSummary summary = (S3ObjectSummary) iterator.next();
-            logger.log("Reading Object: " + summary.getKey());
-
-            String trackingNumber = summary.getKey().split("--")[0];
-            Pair<Long, String> lastKnownStatus = latestStatusForTrackingNumber.get(trackingNumber);
-
-            // Check if this shipment has already been delivered, skip this file
-            if (lastKnownStatus != null && "DELIVERED".equals(lastKnownStatus.getRight())) {
-                continue;
+        while (keepReading) {
+            ListObjectsV2Request request = new ListObjectsV2Request();
+            request.setBucketName(bucketName);
+            if (continuationToken != null) {
+                request.setContinuationToken(continuationToken);
             }
-
-            String fileContents = s3Client.getObjectAsString(bucketName, summary.getKey());
-
-            if (!isValidFile(fileContents)) {
-                logger.log(String.format("Skipping invalid file %s", summary.getKey()));
-                continue;
+            ListObjectsV2Result files = s3Client.listObjectsV2(request);
+            for (S3ObjectSummary summary : files.getObjectSummaries()) {
+                processSingleEvent(bucketName, logger, latestStatusForTrackingNumber, s3Client, filesProcessed, summary);
             }
-            
-            if (!fileContents.contains("\n")) {
-                
+            if (files.isTruncated()) {
+                keepReading = true;
+                continuationToken = files.getNextContinuationToken();
+            } else {
+                keepReading = false;
             }
-            String[] lines = fileContents.split("\n");
-            String line1 = lines[0];
-            String line2 = lines[1];
-
-            String status = line1.split(":")[1];
-            Long timeStamp = Long.parseLong(line2.split(":")[1]);
-
-
-            if (null == lastKnownStatus || lastKnownStatus.getLeft() < timeStamp) {
-                lastKnownStatus = new MutablePair<Long, String>(timeStamp, status);
-                latestStatusForTrackingNumber.put(trackingNumber, lastKnownStatus);
-            }
-
-            //Add to list of processed files
-            filesProcessed.add(new KeyVersion(summary.getKey()));
-            logger.log("logging Contents of the file" + fileContents);
         }
         return filesProcessed;
     }
-    
+
+    private void processSingleEvent(String bucketName, LambdaLogger logger, Map<String, Pair<Long, String>> latestStatusForTrackingNumber, AmazonS3 s3Client, List<KeyVersion> filesProcessed, S3ObjectSummary summary) {
+        logger.log("Reading Object: " + summary.getKey());
+
+        String trackingNumber = summary.getKey().split("--")[0];
+        Pair<Long, String> lastKnownStatus = latestStatusForTrackingNumber.get(trackingNumber);
+
+        // Check if this shipment has already been delivered, skip this file
+        if (lastKnownStatus != null && "DELIVERED".equals(lastKnownStatus.getRight())) {
+            return;
+        }
+
+        String fileContents = s3Client.getObjectAsString(bucketName, summary.getKey());
+
+        if (!isValidFile(fileContents)) {
+            logger.log(String.format("Skipping invalid file %s", summary.getKey()));
+            return;
+        }
+
+        if (!fileContents.contains("\n")) {
+
+        }
+        String[] lines = fileContents.split("\n");
+        String line1 = lines[0];
+        String line2 = lines[1];
+
+        String status = line1.split(":")[1];
+        Long timeStamp = Long.parseLong(line2.split(":")[1]);
+
+
+        if (null == lastKnownStatus || lastKnownStatus.getLeft() < timeStamp) {
+            lastKnownStatus = new MutablePair<Long, String>(timeStamp, status);
+            latestStatusForTrackingNumber.put(trackingNumber, lastKnownStatus);
+        }
+
+        //Add to list of processed files
+        filesProcessed.add(new KeyVersion(summary.getKey()));
+        logger.log("logging Contents of the file" + fileContents);
+    }
+
 
     private void deleteProcessedFiles(Map<String, List<KeyVersion>> filesToDelete) {
       final AmazonS3 s3Client = EventHandler.getS3Client();
