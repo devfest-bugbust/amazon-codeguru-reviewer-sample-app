@@ -27,7 +27,7 @@ import org.apache.commons.lang3.tuple.Pair;
 
 public class EventHandler implements RequestHandler<ScheduledEvent, String> {
 
-    private static AmazonS3 s3Client = null;
+    private static final AmazonS3 s3Client = AmazonS3ClientBuilder.standard().withRegion(Regions.DEFAULT_REGION).build();
 
     /**
      * Shipment events for a carrier are uploaded to separate S3 buckets based on the source of events. E.g., events originating from
@@ -167,9 +167,6 @@ public class EventHandler implements RequestHandler<ScheduledEvent, String> {
     }
     
     public static AmazonS3 getS3Client() {
-        if (s3Client == null) {
-            s3Client = AmazonS3ClientBuilder.standard().withRegion(Regions.DEFAULT_REGION).build();
-        }
         return s3Client;
     }
     
