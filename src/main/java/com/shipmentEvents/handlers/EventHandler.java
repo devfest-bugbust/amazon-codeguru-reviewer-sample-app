@@ -3,7 +3,6 @@ package com.shipmentEvents.handlers;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -15,11 +14,9 @@ import com.amazonaws.services.lambda.runtime.LambdaLogger;
 import com.amazonaws.services.lambda.runtime.events.ScheduledEvent;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3ClientBuilder;
-import com.amazonaws.services.s3.model.DeleteObjectsRequest;
+import com.amazonaws.services.s3.iterable.S3Objects;
+import com.amazonaws.services.s3.model.*;
 import com.amazonaws.services.s3.model.DeleteObjectsRequest.KeyVersion;
-import com.amazonaws.services.s3.model.ListObjectsV2Result;
-import com.amazonaws.services.s3.model.ObjectListing;
-import com.amazonaws.services.s3.model.S3ObjectSummary;
 import com.shipmentEvents.util.Constants;
 
 import org.apache.commons.lang3.tuple.MutablePair;
@@ -100,11 +97,9 @@ public class EventHandler implements RequestHandler<ScheduledEvent, String> {
         final AmazonS3 s3Client = EventHandler.getS3Client();
         logger.log("Processing Bucket: " + bucketName);
 
-        ListObjectsV2Result files = s3Client.listObjectsV2(bucketName);
         List<KeyVersion> filesProcessed = new ArrayList<DeleteObjectsRequest.KeyVersion>();
 
-        for (Iterator<?> iterator = files.getObjectSummaries().iterator(); iterator.hasNext(); ) {
-            S3ObjectSummary summary = (S3ObjectSummary) iterator.next();
+        for (S3ObjectSummary summary : S3Objects.inBucket(s3Client, bucketName)) {
             logger.log("Reading Object: " + summary.getKey());
 
             String trackingNumber = summary.getKey().split("--")[0];
