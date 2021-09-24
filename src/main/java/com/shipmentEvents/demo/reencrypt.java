@@ -1,6 +1,3 @@
-/**
-A function to re-encrypt a file using a new key.
-*/
 
 
 import java.nio.ByteBuffer;
@@ -11,15 +8,37 @@ import com.amazonaws.services.kms.model.EncryptRequest;
 
 
 /**
-A function to decrypt and re-encrypt a ciphered text with a new key.
+A utility class to decrypt and re-encrypt a ciphered text with a new KMS key.
 */
-public static void reencrypt(String keyId, ByteBuffer sourceCipherTextBlob) {
-  AWSKMS client = AWSKMSClientBuilder.standard().build();
-  ByteBuffer sourceCipherTextBlob = ByteBuffer.wrap(new byte[]{1, 2, 3, 4, 5, 6, 7, 8, 9, 0});
+public class Reencrypt {
 
-    DecryptRequest decryptRequest = new DecryptRequest().withCiphertextBlob(sourceCipherTextBlob);
-    EncryptRequest encryptRequest = new EncryptRequest().withKeyId(keyId).withPlaintext(client.decrypt(decryptRequest).getPlaintext());
-    client.encrypt(encryptRequest);
+    public static void main(String[] args) {
+        if (args.length != 2) {
+            System.out.println("Usage: java Reencrypt <ciphertext> <new-key-id>");
+            System.exit(1);
+        }
+
+        String ciphertext = args[0];
+        String newKeyId = args[1];
+
+        // Create an Amazon KMS client
+        AWSKMS kms = AWSKMSClientBuilder.defaultClient();
+
+        // Decrypt the ciphertext
+        DecryptRequest decryptRequest = new DecryptRequest()
+            .withCiphertextBlob(ByteBuffer.wrap(Base64.getDecoder().decode(ciphertext)));
+        byte[] plaintext = kms.decrypt(decryptRequest).getPlaintext().array();
+
+        // Encrypt the plaintext with the new key
+        EncryptRequest encryptRequest = new EncryptRequest()
+            .withPlaintext(ByteBuffer.wrap(plaintext))
+            .withKeyId(newKeyId);
+        byte[] ciphertext2 = kms.encrypt(encryptRequest).getCiphertextBlob().array();
+
+        // Print the new ciphertext
+        System.out.println(Base64.getEncoder().encodeToString(ciphertext2));
+    }
 }
+
 
 
